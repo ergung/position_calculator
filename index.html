@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Futures Position Size Calculator PWA</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+</head>
+<body>
+    <div class="calculator-app">
+        <h1>Futures Position Size Calculator</h1>
+
+        <div class="input-group">
+            <label for="entryPrice">📝 Entry Price</label>
+            <input type="number" id="entryPrice" placeholder="e.g., 20000" step="0.0001">
+        </div>
+
+        <div class="input-group">
+            <label for="stopLossPrice">🛑 Stop Loss Price</label>
+            <input type="number" id="stopLossPrice" placeholder="e.g., 19800" step="0.0001">
+        </div>
+
+        <div class="input-group">
+            <label for="maxLossUSDT">💸 Max Loss (USDT)</label>
+            <input type="number" id="maxLossUSDT" placeholder="e.g., 100" step="0.01">
+        </div>
+        
+        <div class="input-group optional-input">
+            <label for="rewardR">📈 Optional R Value</label>
+            <input type="number" id="rewardR" placeholder="e.g., 2 for 2R" step="0.1">
+        </div>
+
+        <div class="input-group contract-toggle">
+            <label>🎯 Trading by Contracts?</label>
+            <label class="switch">
+                <input type="checkbox" id="useContract">
+                <span class="slider round"></span>
+            </label>
+        </div>
+
+        <div class="input-group" id="contractSizeGroup" style="display:none;">
+            <label for="contractSize">📏 Contract Size</label>
+            <input type="number" id="contractSize" placeholder="e.g., 0.01 BTC" step="0.000001">
+        </div>
+
+        <button id="calculateBtn">CALCULATE POSITION</button>
+
+        <div id="resultOutput" class="result-box" style="display:none;">
+            <h2>✨ Results ✨</h2>
+            <div id="positionValue" class="result-line"></div>
+            <div id="contractsToOpen" class="result-line"></div>
+            <div id="takeProfit" class="result-line take-profit"></div>
+            <div id="rrSummary" class="result-line summary"></div>
+        </div>
+
+        <p id="errorMsg" class="error-message" style="display:none;"></p>
+    </div>
+    
+    <script src="script.js"></script>
+    <script>
+        // PWA registration script (from previous example)
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => console.log('Service Worker registered: ', reg))
+                    .catch(err => console.log('Service Worker registration failed: ', err));
+            });
+        }
+    </script>
+</body>
+</html>
