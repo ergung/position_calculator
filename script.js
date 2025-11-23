@@ -59,7 +59,6 @@ document.addEventListener('DOMContentLoaded', () => {
             // USDT MODE
             res.mode = 'usdt';
             res.money = (risk * entry) / diff;
-            // We calculate qty internally just in case, but won't show it if not asked
             res.qty = res.money / entry; 
         }
 
@@ -67,10 +66,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const tpDist = stripFloat(diff * rewardR);
             res.tp = isLong ? (entry + tpDist) : (entry - tpDist);
             res.profit = risk * rewardR;
-            
-            // Format for Summary
-            const dir = isLong ? "Long" : "Short";
-            res.summary = `${dir} | Risk $${risk} | Aim $${res.profit.toFixed(2)}`;
         }
         return res;
     }
@@ -99,7 +94,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Show Money Value
             positionValueDiv.innerHTML = `💰 **Position Size:** ${r.money.toFixed(2)} USDT`;
 
-            // Logic: Only show Quantity if we are in Contract Mode
+            // Logic: Only show Quantity on UI if in Contract Mode
             if (r.mode === 'contract') {
                 contractsToOpenDiv.style.display = 'block';
                 contractsToOpenDiv.innerHTML = `📦 **Contracts:** ${r.qty.toFixed(6)}`;
@@ -118,21 +113,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 rrSummaryDiv.style.display = 'none';
             }
 
-            // 2. CLIPBOARD STRING BUILDER (TSV Format for Google Sheets)
-            // Format: Date [TAB] Type [TAB] Entry [TAB] SL [TAB] TP [TAB] PosSize($) [TAB] Risk($)
+            // 2. CLIPBOARD STRING BUILDER (TSV Format)
+            // Desired Order: Date | Side | Entry | SL | TP | Risk($) | Size(USDT) | Cont
             
             const dateStr = new Date().toLocaleDateString();
             const typeStr = r.isLong ? "LONG" : "SHORT";
             const tpStr = r.tp ? fmt(r.tp) : "-";
             
-            // Using \t (Tab) is what tells Sheets to jump to the next cell
-            const sheetRow = `${dateStr}\t${typeStr}\t${entry}\t${stop}\t${tpStr}\t${r.money.toFixed(2)}\t${risk}`;
+            // If contract mode, show qty. If USDT mode, show "-"
+            const contractVal = r.mode === 'contract' ? r.qty.toFixed(6) : "-";
+            
+            // \t is the Tab character for spreadsheets
+            const sheetRow = `${dateStr}\t${typeStr}\t${entry}\t${stop}\t${tpStr}\t${risk}\t${r.money.toFixed(2)}\t${contractVal}`;
 
             copyBtn.style.display = 'block';
             copyBtn.onclick = () => {
                 navigator.clipboard.writeText(sheetRow);
                 const originalText = copyBtn.innerText;
-                copyBtn.innerText = "✅ Row Copied!";
+                copyBtn.innerText = "✅ Copied!";
                 setTimeout(() => copyBtn.innerText = originalText, 1500);
             };
 
