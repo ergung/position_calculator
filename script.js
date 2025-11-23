@@ -12,23 +12,25 @@ document.addEventListener('DOMContentLoaded', () => {
     const takeProfitDiv = document.getElementById('takeProfit');
     const rrSummaryDiv = document.getElementById('rrSummary');
     
-    // NEW: Create Copy Button dynamically if it doesn't exist in HTML
+    // Copy Button Logic
     let copyBtn = document.getElementById('copyBtn');
     if (!copyBtn) {
         copyBtn = document.createElement('button');
         copyBtn.id = 'copyBtn';
-        copyBtn.innerText = '📋 Copy Trade Details';
-        copyBtn.style.marginTop = '10px';
-        copyBtn.style.padding = '8px 16px';
-        copyBtn.style.backgroundColor = '#4CAF50';
+        copyBtn.innerText = '📋 Copy for Sheets';
+        copyBtn.style.marginTop = '15px';
+        copyBtn.style.padding = '10px 20px';
+        copyBtn.style.backgroundColor = '#2196F3'; // Blue for sheets
         copyBtn.style.color = 'white';
         copyBtn.style.border = 'none';
+        copyBtn.style.borderRadius = '4px';
         copyBtn.style.cursor = 'pointer';
-        copyBtn.style.display = 'none'; // hidden initially
+        copyBtn.style.fontWeight = 'bold';
+        copyBtn.style.display = 'none'; 
         resultOutput.appendChild(copyBtn);
     }
 
-    // Toggle Contract Input
+    // Toggle Visibility
     useContractToggle.addEventListener('change', () => {
         contractSizeGroup.style.display = useContractToggle.checked ? 'block' : 'none';
     });
@@ -47,23 +49,28 @@ document.addEventListener('DOMContentLoaded', () => {
         const isLong = entry > stop;
         let res = { entry, stop, risk, rewardR, isLong };
 
-        // Position Size Calc
         if (contractSize) {
+            // CONTRACT MODE
+            res.mode = 'contract';
             const denom = stripFloat(diff * contractSize);
             res.qty = risk / denom;
             res.money = res.qty * contractSize * entry;
-            res.unit = "Contracts";
         } else {
+            // USDT MODE
+            res.mode = 'usdt';
             res.money = (risk * entry) / diff;
-            res.qty = res.money / entry;
-            res.unit = "Coins";
+            // We calculate qty internally just in case, but won't show it if not asked
+            res.qty = res.money / entry; 
         }
 
-        // Reward Calc
         if (rewardR) {
             const tpDist = stripFloat(diff * rewardR);
             res.tp = isLong ? (entry + tpDist) : (entry - tpDist);
             res.profit = risk * rewardR;
+            
+            // Format for Summary
+            const dir = isLong ? "Long" : "Short";
+            res.summary = `${dir} | Risk $${risk} | Aim $${res.profit.toFixed(2)}`;
         }
         return res;
     }
@@ -86,36 +93,46 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const r = calculatePositionSize(entry, stop, risk, conSize, rewardR);
 
-            // RENDER
+            // 1. RENDER UI
             resultOutput.style.display = 'block';
             
-            positionValueDiv.innerHTML = `💰 **Total Value:** ${r.money.toFixed(2)} USDT`;
-            contractsToOpenDiv.style.display = 'block';
-            contractsToOpenDiv.innerHTML = `📦 **Quantity:** ${r.qty.toFixed(6)} ${r.unit}`;
+            // Show Money Value
+            positionValueDiv.innerHTML = `💰 **Position Size:** ${r.money.toFixed(2)} USDT`;
 
-            let journalString = "";
+            // Logic: Only show Quantity if we are in Contract Mode
+            if (r.mode === 'contract') {
+                contractsToOpenDiv.style.display = 'block';
+                contractsToOpenDiv.innerHTML = `📦 **Contracts:** ${r.qty.toFixed(6)}`;
+            } else {
+                contractsToOpenDiv.style.display = 'none';
+            }
 
+            // Show Targets
             if (r.tp) {
                 takeProfitDiv.style.display = 'block';
                 rrSummaryDiv.style.display = 'block';
                 takeProfitDiv.innerHTML = `🎯 **TP (${r.rewardR}R):** ${fmt(r.tp)} <span style="color:green">($${r.profit.toFixed(2)})</span>`;
-                rrSummaryDiv.innerHTML = `📊 **SL:** ${stop} | **TP:** ${fmt(r.tp)}`;
-                
-                // Format for Journal
-                const side = r.isLong ? "LONG" : "SHORT";
-                journalString = `${new Date().toLocaleDateString()} | ${side} | Entry: ${entry} | SL: ${stop} | TP: ${fmt(r.tp)} | Qty: ${r.qty.toFixed(4)} | Risk: $${risk}`;
+                rrSummaryDiv.innerHTML = `📊 **Math:** Risk Gap ${fmt(Math.abs(entry-stop))} → Reward Gap ${fmt(Math.abs(entry-r.tp))}`;
             } else {
                 takeProfitDiv.style.display = 'none';
                 rrSummaryDiv.style.display = 'none';
-                journalString = `Entry: ${entry} | SL: ${stop} | Qty: ${r.qty.toFixed(4)}`;
             }
 
-            // SETUP COPY BUTTON
+            // 2. CLIPBOARD STRING BUILDER (TSV Format for Google Sheets)
+            // Format: Date [TAB] Type [TAB] Entry [TAB] SL [TAB] TP [TAB] PosSize($) [TAB] Risk($)
+            
+            const dateStr = new Date().toLocaleDateString();
+            const typeStr = r.isLong ? "LONG" : "SHORT";
+            const tpStr = r.tp ? fmt(r.tp) : "-";
+            
+            // Using \t (Tab) is what tells Sheets to jump to the next cell
+            const sheetRow = `${dateStr}\t${typeStr}\t${entry}\t${stop}\t${tpStr}\t${r.money.toFixed(2)}\t${risk}`;
+
             copyBtn.style.display = 'block';
             copyBtn.onclick = () => {
-                navigator.clipboard.writeText(journalString);
+                navigator.clipboard.writeText(sheetRow);
                 const originalText = copyBtn.innerText;
-                copyBtn.innerText = "✅ Copied!";
+                copyBtn.innerText = "✅ Row Copied!";
                 setTimeout(() => copyBtn.innerText = originalText, 1500);
             };
 
