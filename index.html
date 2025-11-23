@@ -1,147 +1,72 @@
-document.addEventListener('DOMContentLoaded', () => {
-    // UI Elements
-    const calculateBtn = document.getElementById('calculateBtn');
-    const useContractToggle = document.getElementById('useContract');
-    const contractSizeGroup = document.getElementById('contractSizeGroup');
-    const resultOutput = document.getElementById('resultOutput');
-    const errorMsg = document.getElementById('errorMsg');
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Futures Position Size Calculator PWA</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+</head>
+<body>
+    <div class="calculator-app">
+        <h1>Futures Position Size Calculator</h1>
 
-    // Result Elements
-    const positionValueDiv = document.getElementById('positionValue');
-    const contractsToOpenDiv = document.getElementById('contractsToOpen');
-    const takeProfitDiv = document.getElementById('takeProfit');
-    const rrSummaryDiv = document.getElementById('rrSummary');
-    
-    // Copy Button Logic
-    let copyBtn = document.getElementById('copyBtn');
-    if (!copyBtn) {
-        copyBtn = document.createElement('button');
-        copyBtn.id = 'copyBtn';
-        copyBtn.innerText = '📋 Copy for Sheets';
-        copyBtn.style.marginTop = '15px';
-        copyBtn.style.padding = '10px 20px';
-        copyBtn.style.backgroundColor = '#2196F3'; // Blue for sheets
-        copyBtn.style.color = 'white';
-        copyBtn.style.border = 'none';
-        copyBtn.style.borderRadius = '4px';
-        copyBtn.style.cursor = 'pointer';
-        copyBtn.style.fontWeight = 'bold';
-        copyBtn.style.display = 'none'; 
-        resultOutput.appendChild(copyBtn);
-    }
+        <div class="input-group">
+            <label for="entryPrice">📝 Entry Price</label>
+            <input type="number" id="entryPrice" placeholder="e.g., 20000" step="0.0001">
+        </div>
 
-    // Toggle Visibility
-    useContractToggle.addEventListener('change', () => {
-        contractSizeGroup.style.display = useContractToggle.checked ? 'block' : 'none';
-    });
+        <div class="input-group">
+            <label for="stopLossPrice">🛑 Stop Loss Price</label>
+            <input type="number" id="stopLossPrice" placeholder="e.g., 19800" step="0.0001">
+        </div>
 
-    // --- MATH HELPERS ---
-    function stripFloat(number) { return parseFloat(number.toPrecision(12)); }
-    function fmt(num) { return parseFloat(num.toFixed(8)); }
-
-    // --- MAIN LOGIC ---
-    function calculatePositionSize(entry, stop, risk, contractSize, rewardR) {
-        const rawDiff = Math.abs(entry - stop);
-        const diff = stripFloat(rawDiff);
+        <div class="input-group">
+            <label for="maxLossUSDT">💸 Max Loss (USDT)</label>
+            <input type="number" id="maxLossUSDT" placeholder="e.g., 100" step="0.01">
+        </div>
         
-        if (diff === 0) throw new Error("Entry and Stop cannot be the same.");
+        <div class="input-group optional-input">
+            <label for="rewardR">📈 Optional R Value</label>
+            <input type="number" id="rewardR" placeholder="e.g., 2 for 2R" step="0.1">
+        </div>
 
-        const isLong = entry > stop;
-        let res = { entry, stop, risk, rewardR, isLong };
+        <div class="input-group contract-toggle">
+            <label>🎯 Trading by Contracts?</label>
+            <label class="switch">
+                <input type="checkbox" id="useContract">
+                <span class="slider round"></span>
+            </label>
+        </div>
 
-        if (contractSize) {
-            // CONTRACT MODE
-            res.mode = 'contract';
-            const denom = stripFloat(diff * contractSize);
-            res.qty = risk / denom;
-            res.money = res.qty * contractSize * entry;
-        } else {
-            // USDT MODE
-            res.mode = 'usdt';
-            res.money = (risk * entry) / diff;
-            // We calculate qty internally just in case, but won't show it if not asked
-            res.qty = res.money / entry; 
+        <div class="input-group" id="contractSizeGroup" style="display:none;">
+            <label for="contractSize">📏 Contract Size</label>
+            <input type="number" id="contractSize" placeholder="e.g., 0.01 BTC" step="0.000001">
+        </div>
+
+        <button id="calculateBtn">CALCULATE POSITION</button>
+
+        <div id="resultOutput" class="result-box" style="display:none;">
+            <h2>✨ Results ✨</h2>
+            <div id="positionValue" class="result-line"></div>
+            <div id="contractsToOpen" class="result-line"></div>
+            <div id="takeProfit" class="result-line take-profit"></div>
+            <div id="rrSummary" class="result-line summary"></div>
+        </div>
+
+        <p id="errorMsg" class="error-message" style="display:none;"></p>
+    </div>
+    
+    <script src="script.js"></script>
+    <script>
+        // PWA registration script (from previous example)
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => console.log('Service Worker registered: ', reg))
+                    .catch(err => console.log('Service Worker registration failed: ', err));
+            });
         }
-
-        if (rewardR) {
-            const tpDist = stripFloat(diff * rewardR);
-            res.tp = isLong ? (entry + tpDist) : (entry - tpDist);
-            res.profit = risk * rewardR;
-            
-            // Format for Summary
-            const dir = isLong ? "Long" : "Short";
-            res.summary = `${dir} | Risk $${risk} | Aim $${res.profit.toFixed(2)}`;
-        }
-        return res;
-    }
-
-    // --- HANDLER ---
-    function handleCalculation() {
-        errorMsg.style.display = 'none';
-        resultOutput.style.display = 'none';
-        copyBtn.style.display = 'none';
-
-        try {
-            const entry = parseFloat(document.getElementById('entryPrice').value);
-            const stop = parseFloat(document.getElementById('stopLossPrice').value);
-            const risk = parseFloat(document.getElementById('maxLossUSDT').value);
-            const rewardR = parseFloat(document.getElementById('rewardR').value) || null;
-            const useCon = useContractToggle.checked;
-            const conSize = useCon ? parseFloat(document.getElementById('contractSize').value) : null;
-
-            if (isNaN(entry) || isNaN(stop) || isNaN(risk) || risk <= 0) throw new Error("Invalid Inputs");
-
-            const r = calculatePositionSize(entry, stop, risk, conSize, rewardR);
-
-            // 1. RENDER UI
-            resultOutput.style.display = 'block';
-            
-            // Show Money Value
-            positionValueDiv.innerHTML = `💰 **Position Size:** ${r.money.toFixed(2)} USDT`;
-
-            // Logic: Only show Quantity if we are in Contract Mode
-            if (r.mode === 'contract') {
-                contractsToOpenDiv.style.display = 'block';
-                contractsToOpenDiv.innerHTML = `📦 **Contracts:** ${r.qty.toFixed(6)}`;
-            } else {
-                contractsToOpenDiv.style.display = 'none';
-            }
-
-            // Show Targets
-            if (r.tp) {
-                takeProfitDiv.style.display = 'block';
-                rrSummaryDiv.style.display = 'block';
-                takeProfitDiv.innerHTML = `🎯 **TP (${r.rewardR}R):** ${fmt(r.tp)} <span style="color:green">($${r.profit.toFixed(2)})</span>`;
-                rrSummaryDiv.innerHTML = `📊 **Math:** Risk Gap ${fmt(Math.abs(entry-stop))} → Reward Gap ${fmt(Math.abs(entry-r.tp))}`;
-            } else {
-                takeProfitDiv.style.display = 'none';
-                rrSummaryDiv.style.display = 'none';
-            }
-
-            // 2. CLIPBOARD STRING BUILDER (TSV Format for Google Sheets)
-            // Format: Date [TAB] Type [TAB] Entry [TAB] SL [TAB] TP [TAB] PosSize($) [TAB] Risk($)
-            
-            const dateStr = new Date().toLocaleDateString();
-            const typeStr = r.isLong ? "LONG" : "SHORT";
-            const tpStr = r.tp ? fmt(r.tp) : "-";
-            
-            // Using \t (Tab) is what tells Sheets to jump to the next cell
-            const sheetRow = `${dateStr}\t${typeStr}\t${entry}\t${stop}\t${tpStr}\t${r.money.toFixed(2)}\t${risk}`;
-
-            copyBtn.style.display = 'block';
-            copyBtn.onclick = () => {
-                navigator.clipboard.writeText(sheetRow);
-                const originalText = copyBtn.innerText;
-                copyBtn.innerText = "✅ Row Copied!";
-                setTimeout(() => copyBtn.innerText = originalText, 1500);
-            };
-
-        } catch (e) {
-            resultOutput.style.display = 'none';
-            errorMsg.textContent = e.message;
-            errorMsg.style.display = 'block';
-        }
-    }
-
-    calculateBtn.addEventListener('click', handleCalculation);
-});
+    </script>
+</body>
+</html>
