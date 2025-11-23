@@ -17,11 +17,23 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     /**
-     * Python's calculate_position_size converted to JavaScript.
+     * Helper to clean floating point math errors (e.g. 0.1 + 0.2 = 0.300000004)
      */
+    function stripFloat(number) {
+        return parseFloat(number.toPrecision(12));
+    }
+
+    /**
+     * Helper to format numbers nicely (up to 8 decimals for crypto, but no trailing zeros)
+     */
+    function fmt(num) {
+        return parseFloat(num.toFixed(8));
+    }
+
     function calculatePositionSize(entryPrice, stopLossPrice, maxLossUSDT, contractSize, rewardR) {
-        // All inputs are expected to be numbers or null/undefined
-        const priceDifference = Math.abs(entryPrice - stopLossPrice);
+        // Calculate raw distance and strip floating point errors
+        const rawDiff = Math.abs(entryPrice - stopLossPrice);
+        const priceDifference = stripFloat(rawDiff);
 
         if (priceDifference === 0) {
             throw new Error("Entry price and stop loss price cannot be the same.");
@@ -32,7 +44,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (contractSize) {
             // Position Size in Contracts Mode
-            const contracts = maxLossUSDT / (priceDifference * contractSize);
+            // Math: Contracts = Risk / (Distance * ContractSize)
+            const denominator = stripFloat(priceDifference * contractSize);
+            const contracts = maxLossUSDT / denominator;
             const totalPositionValue = contracts * contractSize * entryPrice;
             
             result = {
@@ -42,6 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
             };
         } else {
             // Position Size in USDT Mode
+            // Math: Size = (Risk * Entry) / Distance
             const positionSizeUSDT = (maxLossUSDT * entryPrice) / priceDifference;
             
             result = {
@@ -50,13 +65,19 @@ document.addEventListener('DOMContentLoaded', () => {
             };
         }
 
+        // Risk to Reward Calculation
         if (rewardR !== null && rewardR !== undefined && rewardR > 0) {
-            const tpDifference = priceDifference * rewardR;
-            const tpPrice = isLong ? entryPrice + tpDifference : entryPrice - tpDifference;
+            const tpDifference = stripFloat(priceDifference * rewardR);
+            const tpPrice = isLong ? (entryPrice + tpDifference) : (entryPrice - tpDifference);
             
+            // Calculate exactly how much money we make if TP is hit
+            const potentialProfit = maxLossUSDT * rewardR;
+
             result.take_profit_price = tpPrice;
             result.reward_r = rewardR;
-            result.risk_reward_summary = `Risk ${priceDifference.toFixed(4)} → Reward ${tpDifference.toFixed(4)}`;
+            result.potential_profit = potentialProfit;
+            // We show the Price Gap (Risk) vs Price Gap (Reward)
+            result.risk_reward_summary = `Risk Price Gap: ${fmt(priceDifference)} → Reward Price Gap: ${fmt(tpDifference)}`;
         }
 
         return result;
@@ -72,12 +93,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const entryPrice = parseFloat(document.getElementById('entryPrice').value);
             const stopLossPrice = parseFloat(document.getElementById('stopLossPrice').value);
             const maxLossUSDT = parseFloat(document.getElementById('maxLossUSDT').value);
-            const rewardR = parseFloat(document.getElementById('rewardR').value) || null; // Use null if empty
+            const rewardR = parseFloat(document.getElementById('rewardR').value) || null;
             const useContract = useContractToggle.checked;
             const contractSize = useContract ? parseFloat(document.getElementById('contractSize').value) : null;
 
             if (isNaN(entryPrice) || isNaN(stopLossPrice) || isNaN(maxLossUSDT) || maxLossUSDT <= 0) {
-                throw new Error("Please enter valid positive values for Entry Price, Stop Loss Price, and Max Loss USDT.");
+                throw new Error("Please enter valid positive values for Entry, Stop Loss, and Max Risk.");
             }
             if (useContract && (isNaN(contractSize) || contractSize <= 0)) {
                  throw new Error("Please enter a valid positive value for Contract Size.");
@@ -92,24 +113,31 @@ document.addEventListener('DOMContentLoaded', () => {
             if (result.mode === "usdt") {
                 positionValueDiv.innerHTML = `💰 **Position Size:** ${result.position_size_usdt.toFixed(2)} USDT`;
                 contractsToOpenDiv.style.display = 'none';
-            } else { // contract mode
+            } else { 
+                // Contract mode
                 contractsToOpenDiv.style.display = 'block';
                 positionValueDiv.innerHTML = `💰 **Total Position Value:** ${result.total_position_value.toFixed(2)} USDT`;
-                contractsToOpenDiv.innerHTML = `📈 **Contracts to Open:** ${result.contracts_to_open.toFixed(4)}`;
+                // Show up to 6 decimals for contracts (useful for crypto like ETH/BTC)
+                contractsToOpenDiv.innerHTML = `📈 **Contracts to Open:** ${result.contracts_to_open.toFixed(6)}`;
             }
 
             if (result.take_profit_price) {
                 takeProfitDiv.style.display = 'block';
                 rrSummaryDiv.style.display = 'block';
-                takeProfitDiv.innerHTML = `🎯 **Take Profit Price (${result.reward_r}R):** ${result.take_profit_price.toFixed(4)}`;
-                rrSummaryDiv.innerHTML = `📊 **R/R Summary:** ${result.risk_reward_summary}`;
+                
+                // Updated Output: Shows Price AND Projected Dollar Profit
+                takeProfitDiv.innerHTML = `
+                    🎯 **Take Profit Price (${result.reward_r}R):** ${fmt(result.take_profit_price)} <br>
+                    <span style="color: green; font-size: 0.9em;">(Projected Profit: +$${result.potential_profit.toFixed(2)} USDT)</span>
+                `;
+                
+                rrSummaryDiv.innerHTML = `📊 **Math:** ${result.risk_reward_summary}`;
             } else {
                 takeProfitDiv.style.display = 'none';
                 rrSummaryDiv.style.display = 'none';
             }
 
         } catch (e) {
-            // Handle errors (e.g., price difference is zero or invalid input)
             resultOutput.style.display = 'none';
             errorMsg.textContent = `Error: ${e.message}`;
             errorMsg.style.display = 'block';
