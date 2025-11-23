@@ -1,135 +1,127 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // UI Elements
     const calculateBtn = document.getElementById('calculateBtn');
     const useContractToggle = document.getElementById('useContract');
     const contractSizeGroup = document.getElementById('contractSizeGroup');
     const resultOutput = document.getElementById('resultOutput');
     const errorMsg = document.getElementById('errorMsg');
 
-    // DOM Elements for Results
+    // Result Elements
     const positionValueDiv = document.getElementById('positionValue');
     const contractsToOpenDiv = document.getElementById('contractsToOpen');
     const takeProfitDiv = document.getElementById('takeProfit');
     const rrSummaryDiv = document.getElementById('rrSummary');
+    
+    // NEW: Create Copy Button dynamically if it doesn't exist in HTML
+    let copyBtn = document.getElementById('copyBtn');
+    if (!copyBtn) {
+        copyBtn = document.createElement('button');
+        copyBtn.id = 'copyBtn';
+        copyBtn.innerText = '📋 Copy Trade Details';
+        copyBtn.style.marginTop = '10px';
+        copyBtn.style.padding = '8px 16px';
+        copyBtn.style.backgroundColor = '#4CAF50';
+        copyBtn.style.color = 'white';
+        copyBtn.style.border = 'none';
+        copyBtn.style.cursor = 'pointer';
+        copyBtn.style.display = 'none'; // hidden initially
+        resultOutput.appendChild(copyBtn);
+    }
 
-    // Toggle Contract Size Visibility
+    // Toggle Contract Input
     useContractToggle.addEventListener('change', () => {
         contractSizeGroup.style.display = useContractToggle.checked ? 'block' : 'none';
     });
 
-    // Helper to clean floating point math
-    function stripFloat(number) {
-        return parseFloat(number.toPrecision(12));
-    }
+    // --- MATH HELPERS ---
+    function stripFloat(number) { return parseFloat(number.toPrecision(12)); }
+    function fmt(num) { return parseFloat(num.toFixed(8)); }
 
-    // Helper for display
-    function fmt(num) {
-        return parseFloat(num.toFixed(8));
-    }
+    // --- MAIN LOGIC ---
+    function calculatePositionSize(entry, stop, risk, contractSize, rewardR) {
+        const rawDiff = Math.abs(entry - stop);
+        const diff = stripFloat(rawDiff);
+        
+        if (diff === 0) throw new Error("Entry and Stop cannot be the same.");
 
-    function calculatePositionSize(entryPrice, stopLossPrice, maxLossUSDT, contractSize, rewardR) {
-        const rawDiff = Math.abs(entryPrice - stopLossPrice);
-        const priceDifference = stripFloat(rawDiff);
+        const isLong = entry > stop;
+        let res = { entry, stop, risk, rewardR, isLong };
 
-        if (priceDifference === 0) {
-            throw new Error("Entry price and stop loss price cannot be the same.");
-        }
-
-        const isLong = entryPrice > stopLossPrice;
-        let result = {};
-
+        // Position Size Calc
         if (contractSize) {
-            // Contract Mode
-            const denominator = stripFloat(priceDifference * contractSize);
-            const contracts = maxLossUSDT / denominator;
-            const totalPositionValue = contracts * contractSize * entryPrice;
-            
-            result = {
-                mode: "contract",
-                quantity: contracts, 
-                total_position_value: totalPositionValue,
-                label_unit: "Contracts"
-            };
+            const denom = stripFloat(diff * contractSize);
+            res.qty = risk / denom;
+            res.money = res.qty * contractSize * entry;
+            res.unit = "Contracts";
         } else {
-            // USDT Mode
-            const positionSizeUSDT = (maxLossUSDT * entryPrice) / priceDifference;
-            // Calculate Quantity (How many coins/shares)
-            const quantity = positionSizeUSDT / entryPrice;
-            
-            result = {
-                mode: "usdt",
-                position_size_usdt: positionSizeUSDT,
-                quantity: quantity,
-                label_unit: "Coins/Units"
-            };
+            res.money = (risk * entry) / diff;
+            res.qty = res.money / entry;
+            res.unit = "Coins";
         }
 
-        // Reward Calculation
-        if (rewardR !== null && rewardR !== undefined && rewardR > 0) {
-            const tpDifference = stripFloat(priceDifference * rewardR);
-            const tpPrice = isLong ? (entryPrice + tpDifference) : (entryPrice - tpDifference);
-            const potentialProfit = maxLossUSDT * rewardR;
-
-            result.take_profit_price = tpPrice;
-            result.reward_r = rewardR;
-            result.potential_profit = potentialProfit;
-            
-            // RENAMED to be clearer: "Price Drop" vs "Price Jump"
-            const direction = isLong ? "Drop" : "Rise"; // For Stop Loss
-            const profitDir = isLong ? "Rise" : "Drop"; // For Take Profit
-            result.risk_reward_summary = `SL (Price ${direction}): ${fmt(priceDifference)} → TP (Price ${profitDir}): ${fmt(tpDifference)}`;
+        // Reward Calc
+        if (rewardR) {
+            const tpDist = stripFloat(diff * rewardR);
+            res.tp = isLong ? (entry + tpDist) : (entry - tpDist);
+            res.profit = risk * rewardR;
         }
-
-        return result;
+        return res;
     }
 
+    // --- HANDLER ---
     function handleCalculation() {
         errorMsg.style.display = 'none';
         resultOutput.style.display = 'none';
-        
+        copyBtn.style.display = 'none';
+
         try {
-            const entryPrice = parseFloat(document.getElementById('entryPrice').value);
-            const stopLossPrice = parseFloat(document.getElementById('stopLossPrice').value);
-            const maxLossUSDT = parseFloat(document.getElementById('maxLossUSDT').value);
+            const entry = parseFloat(document.getElementById('entryPrice').value);
+            const stop = parseFloat(document.getElementById('stopLossPrice').value);
+            const risk = parseFloat(document.getElementById('maxLossUSDT').value);
             const rewardR = parseFloat(document.getElementById('rewardR').value) || null;
-            const useContract = useContractToggle.checked;
-            const contractSize = useContract ? parseFloat(document.getElementById('contractSize').value) : null;
+            const useCon = useContractToggle.checked;
+            const conSize = useCon ? parseFloat(document.getElementById('contractSize').value) : null;
 
-            if (isNaN(entryPrice) || isNaN(stopLossPrice) || isNaN(maxLossUSDT) || maxLossUSDT <= 0) {
-                throw new Error("Please enter valid positive values.");
-            }
+            if (isNaN(entry) || isNaN(stop) || isNaN(risk) || risk <= 0) throw new Error("Invalid Inputs");
 
-            const result = calculatePositionSize(entryPrice, stopLossPrice, maxLossUSDT, contractSize, rewardR);
+            const r = calculatePositionSize(entry, stop, risk, conSize, rewardR);
 
+            // RENDER
             resultOutput.style.display = 'block';
-
-            // DYNAMIC OUTPUT
-            // 1. Show Total Money Required
-            const moneyValue = result.mode === "usdt" ? result.position_size_usdt : result.total_position_value;
-            positionValueDiv.innerHTML = `💰 **Total Value:** ${moneyValue.toFixed(2)} USDT`;
-
-            // 2. Show Quantity (The new helpful part)
+            
+            positionValueDiv.innerHTML = `💰 **Total Value:** ${r.money.toFixed(2)} USDT`;
             contractsToOpenDiv.style.display = 'block';
-            contractsToOpenDiv.innerHTML = `📦 **Quantity to Buy:** ${result.quantity.toFixed(6)} ${result.label_unit}`;
+            contractsToOpenDiv.innerHTML = `📦 **Quantity:** ${r.qty.toFixed(6)} ${r.unit}`;
 
-            // 3. Show Targets
-            if (result.take_profit_price) {
+            let journalString = "";
+
+            if (r.tp) {
                 takeProfitDiv.style.display = 'block';
                 rrSummaryDiv.style.display = 'block';
+                takeProfitDiv.innerHTML = `🎯 **TP (${r.rewardR}R):** ${fmt(r.tp)} <span style="color:green">($${r.profit.toFixed(2)})</span>`;
+                rrSummaryDiv.innerHTML = `📊 **SL:** ${stop} | **TP:** ${fmt(r.tp)}`;
                 
-                takeProfitDiv.innerHTML = `
-                    🎯 **Target Price (${result.reward_r}R):** ${fmt(result.take_profit_price)} <br>
-                    <span style="color: green; font-size: 0.9em;">(Profit: +$${result.potential_profit.toFixed(2)} USDT)</span>
-                `;
-                
-                rrSummaryDiv.innerHTML = `📊 **Distance:** ${result.risk_reward_summary}`;
+                // Format for Journal
+                const side = r.isLong ? "LONG" : "SHORT";
+                journalString = `${new Date().toLocaleDateString()} | ${side} | Entry: ${entry} | SL: ${stop} | TP: ${fmt(r.tp)} | Qty: ${r.qty.toFixed(4)} | Risk: $${risk}`;
             } else {
                 takeProfitDiv.style.display = 'none';
                 rrSummaryDiv.style.display = 'none';
+                journalString = `Entry: ${entry} | SL: ${stop} | Qty: ${r.qty.toFixed(4)}`;
             }
+
+            // SETUP COPY BUTTON
+            copyBtn.style.display = 'block';
+            copyBtn.onclick = () => {
+                navigator.clipboard.writeText(journalString);
+                const originalText = copyBtn.innerText;
+                copyBtn.innerText = "✅ Copied!";
+                setTimeout(() => copyBtn.innerText = originalText, 1500);
+            };
 
         } catch (e) {
             resultOutput.style.display = 'none';
-            errorMsg.textContent = `Error: ${e.message}`;
+            errorMsg.textContent = e.message;
             errorMsg.style.display = 'block';
         }
     }
